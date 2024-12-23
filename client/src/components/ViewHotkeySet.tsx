@@ -10,25 +10,31 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 const ViewHotkeySet = () => {
    const navigate = useNavigate();
    const { id } = useParams<{ id: string }>();
-   const { hotkeySets } = useHotkeys();
+   const { getHotkeySet } = useHotkeys();
    const [hotkeySet, setHotkeySet] = useState<HotkeySet | null>(null);
    const [loading, setLoading] = useState(true);
 
    useEffect(() => {
-      if (id && hotkeySets)
-      {
-         const set = hotkeySets.find(set => set.id === id);
-         if (set)
+      const fetchHotkeySet = async () => {
+         if (!id) return;
+
+         try
          {
+            const set = await getHotkeySet(id);
             setHotkeySet(set);
-         } else
+         } catch (error)
          {
-            toast.error('Hotkey set not found');
+            console.error('Error fetching hotkey set:', error);
+            toast.error('Failed to load hotkey set');
             navigate('/');
+         } finally
+         {
+            setLoading(false);
          }
-         setLoading(false);
-      }
-   }, [id, hotkeySets, navigate]);
+      };
+
+      fetchHotkeySet();
+   }, [id, getHotkeySet, navigate]);
 
    if (loading || !hotkeySet)
    {
@@ -97,7 +103,7 @@ const ViewHotkeySet = () => {
                                     {hotkey.key}
                                  </TableCell>
                                  <TableCell>{hotkey.description}</TableCell>
-                                 <TableCell>{hotkey.action}</TableCell>
+                                 <TableCell>{hotkey.action || '-'}</TableCell>
                               </TableRow>
                            ))}
                         </TableBody>

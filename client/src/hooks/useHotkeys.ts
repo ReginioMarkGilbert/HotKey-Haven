@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { HotkeySet } from '../types';
 
 const API_URL = 'http://localhost:5000/api';
@@ -9,11 +9,12 @@ export const useHotkeys = () => {
    const [loading, setLoading] = useState(false);
    const [error, setError] = useState<Error | null>(null);
 
-   const fetchHotkeySets = async () => {
+   const fetchHotkeySets = useCallback(async () => {
       try
       {
          setLoading(true);
          const response = await axios.get(`${API_URL}/hotkey-sets`);
+         console.log('Fetched hotkey sets:', response.data);
          setHotkeySets(response.data);
       } catch (err)
       {
@@ -23,7 +24,21 @@ export const useHotkeys = () => {
       {
          setLoading(false);
       }
-   };
+   }, []);
+
+   const getHotkeySet = useCallback(async (id: string) => {
+      try
+      {
+         const response = await axios.get(`${API_URL}/hotkey-sets/${id}`);
+         console.log('Fetched single hotkey set:', response.data);
+         return response.data;
+      } catch (err)
+      {
+         console.error('Error fetching hotkey set:', err);
+         setError(err as Error);
+         throw err;
+      }
+   }, []);
 
    const createHotkeySet = async (hotkeySet: Omit<HotkeySet, '_id' | 'createdAt' | 'updatedAt'>) => {
       try
@@ -85,12 +100,13 @@ export const useHotkeys = () => {
 
    useEffect(() => {
       fetchHotkeySets();
-   }, []);
+   }, [fetchHotkeySets]);
 
    return {
       hotkeySets,
       loading,
       error,
+      getHotkeySet,
       createHotkeySet,
       updateHotkeySet,
       deleteHotkeySet,

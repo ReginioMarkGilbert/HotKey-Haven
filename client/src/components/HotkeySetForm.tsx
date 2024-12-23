@@ -1,6 +1,6 @@
 import { ArrowLeft, Loader2, MinusIcon, PlusIcon } from 'lucide-react';
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useHotkeys } from '../hooks/useHotkeys';
 import { cn } from '../lib/utils';
@@ -17,8 +17,10 @@ interface HotkeySetFormProps {
 
 const HotkeySetForm: React.FC<HotkeySetFormProps> = ({ onClose }) => {
    const navigate = useNavigate();
-   const { createHotkeySet } = useHotkeys();
+   const { id } = useParams<{ id: string }>();
+   const { createHotkeySet, updateHotkeySet, getHotkeySet } = useHotkeys();
    const [isSubmitting, setIsSubmitting] = useState(false);
+   const [isLoading, setIsLoading] = useState(!!id);
 
    const [formData, setFormData] = useState({
       name: '',
@@ -26,6 +28,36 @@ const HotkeySetForm: React.FC<HotkeySetFormProps> = ({ onClose }) => {
       description: '',
       hotkeys: [{ id: '1', key: '', description: '', action: '' }] as Hotkey[]
    });
+
+   const fetchHotkeySet = useCallback(async () => {
+      if (!id) return;
+
+      try
+      {
+         const hotkeySet = await getHotkeySet(id);
+         setFormData({
+            name: hotkeySet.name,
+            application: hotkeySet.application,
+            description: hotkeySet.description || '',
+            hotkeys: hotkeySet.hotkeys.length > 0 ? hotkeySet.hotkeys : [{ id: '1', key: '', description: '', action: '' }]
+         });
+      } catch (error)
+      {
+         console.error('Error fetching hotkey set:', error);
+         toast.error('Failed to load hotkey set');
+         navigate('/');
+      } finally
+      {
+         setIsLoading(false);
+      }
+   }, [id, getHotkeySet, navigate]);
+
+   useEffect(() => {
+      if (id)
+      {
+         fetchHotkeySet();
+      }
+   }, [id, fetchHotkeySet]);
 
    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const { name, value } = e.target;
@@ -68,26 +100,38 @@ const HotkeySetForm: React.FC<HotkeySetFormProps> = ({ onClose }) => {
          }
 
          const validHotkeys = formData.hotkeys.filter(hotkey =>
-            hotkey.key && hotkey.description && hotkey.action
+            hotkey.key && hotkey.description
          );
 
          if (validHotkeys.length === 0)
          {
-            toast.error('Please add at least one valid hotkey');
+            toast.error('Please add at least one valid hotkey with key and description');
             return;
          }
 
-         const result = await createHotkeySet(formData);
-
-         if (result)
+         if (id)
          {
-            toast.success('Hotkey set created successfully');
-            navigate('/');
+            // Update existing hotkey set
+            const result = await updateHotkeySet(id, formData);
+            if (result)
+            {
+               toast.success('Hotkey set updated successfully');
+               navigate(`/view/${id}`);
+            }
+         } else
+         {
+            // Create new hotkey set
+            const result = await createHotkeySet(formData);
+            if (result)
+            {
+               toast.success('Hotkey set created successfully');
+               navigate('/');
+            }
          }
       } catch (error)
       {
-         console.error('Error creating hotkey set:', error);
-         toast.error('Failed to create hotkey set');
+         console.error('Error saving hotkey set:', error);
+         toast.error(id ? 'Failed to update hotkey set' : 'Failed to create hotkey set');
       } finally
       {
          setIsSubmitting(false);
@@ -97,6 +141,18 @@ const HotkeySetForm: React.FC<HotkeySetFormProps> = ({ onClose }) => {
    const handleBack = () => {
       navigate('/');
    };
+
+   if (isLoading)
+   {
+      return (
+         <div className="flex items-center justify-center min-h-screen bg-background">
+            <div className="flex flex-col items-center space-y-4">
+               <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+               <p className="text-sm text-muted-foreground">Loading hotkey set...</p>
+            </div>
+         </div>
+      );
+   }
 
    return (
       <div className="min-h-screen bg-background">
@@ -109,9 +165,11 @@ const HotkeySetForm: React.FC<HotkeySetFormProps> = ({ onClose }) => {
                         <ArrowLeft className="h-4 w-4" />
                      </Button>
                      <div>
-                        <h1 className="text-2xl font-semibold text-foreground">Create Hotkey Set</h1>
+                        <h1 className="text-2xl font-semibold text-foreground">
+                           {id ? 'Edit Hotkey Set' : 'Create Hotkey Set'}
+                        </h1>
                         <p className="mt-1 text-sm text-muted-foreground">
-                           Add a new set of hotkeys for your application
+                           {id ? 'Update your hotkey set' : 'Add a new set of hotkeys for your application'}
                         </p>
                      </div>
                   </div>
@@ -244,7 +302,9 @@ const HotkeySetForm: React.FC<HotkeySetFormProps> = ({ onClose }) => {
                         {isSubmitting && (
                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         )}
-                        {isSubmitting ? 'Creating...' : 'Create Hotkey Set'}
+                        {isSubmitting
+                           ? (id ? 'Updating...' : 'Creating...')
+                           : (id ? 'Update Hotkey Set' : 'Create Hotkey Set')}
                      </Button>
                   </div>
                </form>

@@ -18,11 +18,16 @@ export const getAllHotkeySets = async (req: Request, res: Response) => {
 export const getHotkeySetById = async (req: Request, res: Response) => {
    try
    {
+      console.log('Fetching hotkey set with ID:', req.params.id);
       const hotkeySet = await HotkeySet.findById(req.params.id);
+
       if (!hotkeySet)
       {
+         console.log('Hotkey set not found for ID:', req.params.id);
          return res.status(404).json({ message: 'Hotkey set not found' });
       }
+
+      console.log('Found hotkey set:', hotkeySet);
       res.json(hotkeySet);
    } catch (error)
    {
