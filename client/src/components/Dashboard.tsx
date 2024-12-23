@@ -1,8 +1,12 @@
-import { Eye, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
+import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { Eye, Pencil, Pin, PinOff, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useHotkeys } from '../hooks/useHotkeys';
+import { cn } from '../lib/utils';
 import {
    AlertDialog,
    AlertDialogAction,
@@ -16,12 +20,86 @@ import {
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 
+interface SortableHotkeySetCardProps {
+   id: string;
+   children: React.ReactNode;
+}
+
+const SortableHotkeySetCard = ({ id, children }: SortableHotkeySetCardProps) => {
+   const {
+      attributes,
+      listeners,
+      setNodeRef,
+      transform,
+      transition,
+      isDragging,
+   } = useSortable({ id });
+
+   const style = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      opacity: isDragging ? 0.5 : 1,
+      position: 'relative' as const,
+      zIndex: isDragging ? 1 : 0,
+      cursor: 'grab',
+   };
+
+   return (
+      <div
+         ref={setNodeRef}
+         style={style}
+         {...attributes}
+         {...listeners}
+         className="touch-none"
+      >
+         {children}
+      </div>
+   );
+};
+
 const Dashboard = () => {
    const navigate = useNavigate();
-   const { hotkeySets, loading, error, deleteHotkeySet } = useHotkeys();
+   const { hotkeySets, loading, error, deleteHotkeySet, updateHotkeySet } = useHotkeys();
    const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
    const [isDeleting, setIsDeleting] = useState(false);
+   const [orderedSets, setOrderedSets] = useState<string[]>([]);
+
+   // Initialize orderedSets when hotkeySets changes
+   useEffect(() => {
+      if (hotkeySets.length > 0)
+      {
+         // Sort sets with pinned ones first
+         const sortedSets = [...hotkeySets].sort((a, b) => {
+            if (a.pinned && !b.pinned) return -1;
+            if (!a.pinned && b.pinned) return 1;
+            return 0;
+         });
+         setOrderedSets(sortedSets.map(set => set._id));
+      }
+   }, [hotkeySets]);
+
+   const sensors = useSensors(
+      useSensor(PointerSensor, {
+         activationConstraint: {
+            delay: 0,
+            tolerance: 0,
+         },
+      })
+   );
+
+   const handleDragEnd = (event: DragEndEvent) => {
+      const { active, over } = event;
+
+      if (over && active.id !== over.id)
+      {
+         setOrderedSets((items) => {
+            const oldIndex = items.indexOf(active.id as string);
+            const newIndex = items.indexOf(over.id as string);
+            return arrayMove(items, oldIndex, newIndex);
+         });
+      }
+   };
 
    const handleDelete = async () => {
       if (!selectedSetId) return;
@@ -34,6 +112,8 @@ const Dashboard = () => {
          {
             toast.success('Hotkey set deleted successfully');
             setIsDeleteDialogOpen(false);
+            // Remove the deleted set from orderedSets
+            setOrderedSets(prev => prev.filter(id => id !== selectedSetId));
          }
       } catch (error)
       {
@@ -42,6 +122,30 @@ const Dashboard = () => {
       {
          setIsDeleting(false);
          setSelectedSetId(null);
+      }
+   };
+
+   const handleTogglePin = async (setId: string, currentPinned: boolean) => {
+      try
+      {
+         const result = await updateHotkeySet(setId, { pinned: !currentPinned });
+         if (result)
+         {
+            toast.success(currentPinned ? 'Set unpinned' : 'Set pinned');
+            // Reorder sets with pinned ones first
+            const updatedSets = hotkeySets.map(set =>
+               set._id === setId ? { ...set, pinned: !currentPinned } : set
+            );
+            const sortedSets = [...updatedSets].sort((a, b) => {
+               if (a.pinned && !b.pinned) return -1;
+               if (!a.pinned && b.pinned) return 1;
+               return 0;
+            });
+            setOrderedSets(sortedSets.map(set => set._id));
+         }
+      } catch (error)
+      {
+         toast.error('Failed to update pin status');
       }
    };
 
@@ -67,6 +171,10 @@ const Dashboard = () => {
          </div>
       );
    }
+
+   const sortedHotkeySets = orderedSets
+      .map(id => hotkeySets.find(set => set._id === id))
+      .filter((set): set is NonNullable<typeof set> => set !== undefined);
 
    return (
       <>
@@ -109,90 +217,130 @@ const Dashboard = () => {
                         </div>
                      </div>
                   ) : (
-                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {hotkeySets.map((set) => (
-                           <Card
-                              key={set._id}
-                              className="group relative hover:shadow-lg transition-all duration-200 hover:border-primary/50"
-                           >
-                              {/* Hover Overlay */}
-                              <div className="absolute inset-0 bg-background/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-4 z-10">
-                                 <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={(e) => {
-                                       e.stopPropagation();
-                                       navigate(`/view/${set._id}`);
-                                    }}
-                                    className="bg-background hover:bg-accent"
-                                 >
-                                    <Eye className="mr-2 h-4 w-4" />
-                                    View
-                                 </Button>
-                                 <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={(e) => {
-                                       e.stopPropagation();
-                                       navigate(`/edit/${set._id}`);
-                                    }}
-                                    className="bg-background hover:bg-accent"
-                                 >
-                                    <Pencil className="mr-2 h-4 w-4" />
-                                    Edit
-                                 </Button>
-                                 <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={(e) => {
-                                       e.stopPropagation();
-                                       setSelectedSetId(set._id);
-                                       setIsDeleteDialogOpen(true);
-                                    }}
-                                    className="bg-background hover:bg-destructive hover:text-destructive-foreground"
-                                 >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Delete
-                                 </Button>
-                              </div>
+                     <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleDragEnd}
+                     >
+                        <SortableContext items={orderedSets} strategy={rectSortingStrategy}>
+                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                              {sortedHotkeySets.map((set) => (
+                                 <SortableHotkeySetCard key={set._id} id={set._id}>
+                                    <Card
+                                       className={cn(
+                                          "group relative hover:shadow-lg transition-all duration-200 hover:border-primary/50 active:cursor-grabbing",
+                                          set.pinned && "border-primary/50"
+                                       )}
+                                    >
+                                       {/* Pin indicator */}
+                                       {set.pinned && (
+                                          <div className="absolute top-2 right-2 text-primary">
+                                             <Pin className="h-4 w-4" />
+                                          </div>
+                                       )}
 
-                              <CardHeader>
-                                 <CardTitle className="flex items-center justify-between">
-                                    <span className="text-lg font-medium">{set.name}</span>
-                                    <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary">
-                                       {set.hotkeys.length} hotkeys
-                                    </span>
-                                 </CardTitle>
-                                 <CardDescription className="text-sm text-muted-foreground">
-                                    {set.application}
-                                 </CardDescription>
-                              </CardHeader>
-                              <CardContent>
-                                 <p className="text-sm text-muted-foreground line-clamp-2">
-                                    {set.description || 'No description provided'}
-                                 </p>
-                                 <div className="mt-4 flex flex-wrap gap-2">
-                                    {set.hotkeys.slice(0, 3).map((hotkey, index) => (
-                                       <span
-                                          key={`${set._id}-hotkey-${index}`}
-                                          className="px-2 py-1 text-xs rounded-md bg-accent text-accent-foreground"
-                                       >
-                                          {hotkey.key}
-                                       </span>
-                                    ))}
-                                    {set.hotkeys.length > 3 && (
-                                       <span
-                                          key={`${set._id}-more`}
-                                          className="px-2 py-1 text-xs rounded-md bg-accent text-accent-foreground"
-                                       >
-                                          +{set.hotkeys.length - 3} more
-                                       </span>
-                                    )}
-                                 </div>
-                              </CardContent>
-                           </Card>
-                        ))}
-                     </div>
+                                       {/* Hover Overlay */}
+                                       <div className="absolute inset-0 bg-background/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-4 z-10">
+                                          <Button
+                                             variant="outline"
+                                             size="sm"
+                                             onClick={(e) => {
+                                                e.stopPropagation();
+                                                navigate(`/view/${set._id}`);
+                                             }}
+                                             className="bg-background hover:bg-accent"
+                                          >
+                                             <Eye className="mr-2 h-4 w-4" />
+                                             View
+                                          </Button>
+                                          <Button
+                                             variant="outline"
+                                             size="sm"
+                                             onClick={(e) => {
+                                                e.stopPropagation();
+                                                navigate(`/edit/${set._id}`);
+                                             }}
+                                             className="bg-background hover:bg-accent"
+                                          >
+                                             <Pencil className="mr-2 h-4 w-4" />
+                                             Edit
+                                          </Button>
+                                          <Button
+                                             variant="outline"
+                                             size="sm"
+                                             onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleTogglePin(set._id, !!set.pinned);
+                                             }}
+                                             className="bg-background hover:bg-accent"
+                                          >
+                                             {set.pinned ? (
+                                                <>
+                                                   <PinOff className="mr-2 h-4 w-4" />
+                                                   Unpin
+                                                </>
+                                             ) : (
+                                                <>
+                                                   <Pin className="mr-2 h-4 w-4" />
+                                                   Pin
+                                                </>
+                                             )}
+                                          </Button>
+                                          <Button
+                                             variant="outline"
+                                             size="sm"
+                                             onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedSetId(set._id);
+                                                setIsDeleteDialogOpen(true);
+                                             }}
+                                             className="bg-background hover:bg-destructive hover:text-destructive-foreground"
+                                          >
+                                             <Trash2 className="mr-2 h-4 w-4" />
+                                             Delete
+                                          </Button>
+                                       </div>
+
+                                       <CardHeader>
+                                          <CardTitle className="flex items-center justify-between">
+                                             <span className="text-lg font-medium">{set.name}</span>
+                                             <span className="text-xs px-2 py-1 rounded-full bg-primary/10 text-primary">
+                                                {set.hotkeys.length} hotkeys
+                                             </span>
+                                          </CardTitle>
+                                          <CardDescription className="text-sm text-muted-foreground">
+                                             {set.application}
+                                          </CardDescription>
+                                       </CardHeader>
+                                       <CardContent>
+                                          <p className="text-sm text-muted-foreground line-clamp-2">
+                                             {set.description || 'No description provided'}
+                                          </p>
+                                          <div className="mt-4 flex flex-wrap gap-2">
+                                             {set.hotkeys.slice(0, 3).map((hotkey, index) => (
+                                                <span
+                                                   key={`${set._id}-hotkey-${index}`}
+                                                   className="px-2 py-1 text-xs rounded-md bg-accent text-accent-foreground"
+                                                >
+                                                   {hotkey.key}
+                                                </span>
+                                             ))}
+                                             {set.hotkeys.length > 3 && (
+                                                <span
+                                                   key={`${set._id}-more`}
+                                                   className="px-2 py-1 text-xs rounded-md bg-accent text-accent-foreground"
+                                                >
+                                                   +{set.hotkeys.length - 3} more
+                                                </span>
+                                             )}
+                                          </div>
+                                       </CardContent>
+                                    </Card>
+                                 </SortableHotkeySetCard>
+                              ))}
+                           </div>
+                        </SortableContext>
+                     </DndContext>
                   )}
                </div>
             </div>
