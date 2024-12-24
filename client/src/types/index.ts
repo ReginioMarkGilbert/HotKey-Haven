@@ -11,7 +11,6 @@ export interface HotkeySet {
    application: string;
    description: string;
    hotkeys: Hotkey[];
-   pinned?: boolean;
    createdAt: Date;
    updatedAt: Date;
 }

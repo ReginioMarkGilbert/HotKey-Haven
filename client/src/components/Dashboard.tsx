@@ -1,12 +1,11 @@
 import { DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Eye, Pencil, Pin, PinOff, Plus, Trash2 } from 'lucide-react';
+import { Eye, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useHotkeys } from '../hooks/useHotkeys';
-import { cn } from '../lib/utils';
 import {
    AlertDialog,
    AlertDialogAction,
@@ -19,11 +18,45 @@ import {
 } from './ui/alert-dialog';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import {
+   Tooltip,
+   TooltipContent,
+   TooltipProvider,
+   TooltipTrigger,
+} from "./ui/tooltip";
 
 interface SortableHotkeySetCardProps {
    id: string;
    children: React.ReactNode;
 }
+
+const DragHandle = () => {
+   return (
+      <TooltipProvider delayDuration={250}>
+         <Tooltip>
+            <TooltipTrigger asChild>
+               <div className="flex flex-col gap-[3px]">
+                  <div className="flex gap-[3px]">
+                     <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70" />
+                     <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70" />
+                  </div>
+                  <div className="flex gap-[3px]">
+                     <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70" />
+                     <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70" />
+                  </div>
+                  <div className="flex gap-[3px]">
+                     <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70" />
+                     <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/70" />
+                  </div>
+               </div>
+            </TooltipTrigger>
+            <TooltipContent>
+               <p>Drag to reorder</p>
+            </TooltipContent>
+         </Tooltip>
+      </TooltipProvider>
+   );
+};
 
 const SortableHotkeySetCard = ({ id, children }: SortableHotkeySetCardProps) => {
    const {
@@ -41,17 +74,19 @@ const SortableHotkeySetCard = ({ id, children }: SortableHotkeySetCardProps) => 
       opacity: isDragging ? 0.5 : 1,
       position: 'relative' as const,
       zIndex: isDragging ? 1 : 0,
-      cursor: 'grab',
    };
 
    return (
-      <div
-         ref={setNodeRef}
-         style={style}
-         {...attributes}
-         {...listeners}
-         className="touch-none"
-      >
+      <div ref={setNodeRef} style={style} className="group">
+         <div
+            className="absolute left-0 top-0 bottom-0 flex items-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 px-3 z-20"
+            {...attributes}
+            {...listeners}
+         >
+            <div className="p-1.5 hover:bg-accent/50 rounded-md cursor-grab active:cursor-grabbing">
+               <DragHandle />
+            </div>
+         </div>
          {children}
       </div>
    );
@@ -59,7 +94,7 @@ const SortableHotkeySetCard = ({ id, children }: SortableHotkeySetCardProps) => 
 
 const Dashboard = () => {
    const navigate = useNavigate();
-   const { hotkeySets, loading, error, deleteHotkeySet, updateHotkeySet } = useHotkeys();
+   const { hotkeySets, loading, error, deleteHotkeySet } = useHotkeys();
    const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
    const [isDeleting, setIsDeleting] = useState(false);
@@ -69,21 +104,16 @@ const Dashboard = () => {
    useEffect(() => {
       if (hotkeySets.length > 0)
       {
-         // Sort sets with pinned ones first
-         const sortedSets = [...hotkeySets].sort((a, b) => {
-            if (a.pinned && !b.pinned) return -1;
-            if (!a.pinned && b.pinned) return 1;
-            return 0;
-         });
-         setOrderedSets(sortedSets.map(set => set._id));
+         setOrderedSets(hotkeySets.map(set => set._id));
       }
    }, [hotkeySets]);
 
    const sensors = useSensors(
       useSensor(PointerSensor, {
          activationConstraint: {
+            distance: 3,
             delay: 0,
-            tolerance: 0,
+            tolerance: 5,
          },
       })
    );
@@ -122,30 +152,6 @@ const Dashboard = () => {
       {
          setIsDeleting(false);
          setSelectedSetId(null);
-      }
-   };
-
-   const handleTogglePin = async (setId: string, currentPinned: boolean) => {
-      try
-      {
-         const result = await updateHotkeySet(setId, { pinned: !currentPinned });
-         if (result)
-         {
-            toast.success(currentPinned ? 'Set unpinned' : 'Set pinned');
-            // Reorder sets with pinned ones first
-            const updatedSets = hotkeySets.map(set =>
-               set._id === setId ? { ...set, pinned: !currentPinned } : set
-            );
-            const sortedSets = [...updatedSets].sort((a, b) => {
-               if (a.pinned && !b.pinned) return -1;
-               if (!a.pinned && b.pinned) return 1;
-               return 0;
-            });
-            setOrderedSets(sortedSets.map(set => set._id));
-         }
-      } catch (error)
-      {
-         toast.error('Failed to update pin status');
       }
    };
 
@@ -226,79 +232,74 @@ const Dashboard = () => {
                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                               {sortedHotkeySets.map((set) => (
                                  <SortableHotkeySetCard key={set._id} id={set._id}>
-                                    <Card
-                                       className={cn(
-                                          "group relative hover:shadow-lg transition-all duration-200 hover:border-primary/50 active:cursor-grabbing",
-                                          set.pinned && "border-primary/50"
-                                       )}
-                                    >
-                                       {/* Pin indicator */}
-                                       {set.pinned && (
-                                          <div className="absolute top-2 right-2 text-primary">
-                                             <Pin className="h-4 w-4" />
-                                          </div>
-                                       )}
-
+                                    <Card className="group relative hover:shadow-lg transition-all duration-200 hover:border-primary/50 pl-12">
                                        {/* Hover Overlay */}
-                                       <div className="absolute inset-0 bg-background/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-4 z-10">
-                                          <Button
-                                             variant="outline"
-                                             size="sm"
-                                             onClick={(e) => {
-                                                e.stopPropagation();
-                                                navigate(`/view/${set._id}`);
-                                             }}
-                                             className="bg-background hover:bg-accent"
-                                          >
-                                             <Eye className="mr-2 h-4 w-4" />
-                                             View
-                                          </Button>
-                                          <Button
-                                             variant="outline"
-                                             size="sm"
-                                             onClick={(e) => {
-                                                e.stopPropagation();
-                                                navigate(`/edit/${set._id}`);
-                                             }}
-                                             className="bg-background hover:bg-accent"
-                                          >
-                                             <Pencil className="mr-2 h-4 w-4" />
-                                             Edit
-                                          </Button>
-                                          <Button
-                                             variant="outline"
-                                             size="sm"
-                                             onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleTogglePin(set._id, !!set.pinned);
-                                             }}
-                                             className="bg-background hover:bg-accent"
-                                          >
-                                             {set.pinned ? (
-                                                <>
-                                                   <PinOff className="mr-2 h-4 w-4" />
-                                                   Unpin
-                                                </>
-                                             ) : (
-                                                <>
-                                                   <Pin className="mr-2 h-4 w-4" />
-                                                   Pin
-                                                </>
-                                             )}
-                                          </Button>
-                                          <Button
-                                             variant="outline"
-                                             size="sm"
-                                             onClick={(e) => {
-                                                e.stopPropagation();
-                                                setSelectedSetId(set._id);
-                                                setIsDeleteDialogOpen(true);
-                                             }}
-                                             className="bg-background hover:bg-destructive hover:text-destructive-foreground"
-                                          >
-                                             <Trash2 className="mr-2 h-4 w-4" />
-                                             Delete
-                                          </Button>
+                                       <div
+                                          className="absolute inset-0 bg-background/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-4 z-10"
+                                          onClick={(e) => e.stopPropagation()}
+                                       >
+                                          <TooltipProvider delayDuration={250}>
+                                             <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                   <Button
+                                                      variant="outline"
+                                                      size="icon"
+                                                      onClick={(e) => {
+                                                         e.preventDefault();
+                                                         e.stopPropagation();
+                                                         navigate(`/view/${set._id}`);
+                                                      }}
+                                                      className="bg-background hover:bg-accent h-8 w-8"
+                                                   >
+                                                      <Eye className="h-4 w-4" />
+                                                   </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                   <p>View hotkey set</p>
+                                                </TooltipContent>
+                                             </Tooltip>
+
+                                             <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                   <Button
+                                                      variant="outline"
+                                                      size="icon"
+                                                      onClick={(e) => {
+                                                         e.preventDefault();
+                                                         e.stopPropagation();
+                                                         navigate(`/edit/${set._id}`);
+                                                      }}
+                                                      className="bg-background hover:bg-accent h-8 w-8"
+                                                   >
+                                                      <Pencil className="h-4 w-4" />
+                                                   </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                   <p>Edit hotkey set</p>
+                                                </TooltipContent>
+                                             </Tooltip>
+
+                                             <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                   <Button
+                                                      variant="outline"
+                                                      size="icon"
+                                                      onClick={(e) => {
+                                                         e.preventDefault();
+                                                         e.stopPropagation();
+                                                         setSelectedSetId(set._id);
+                                                         setIsDeleteDialogOpen(true);
+                                                      }}
+                                                      className="bg-background hover:bg-destructive hover:text-destructive-foreground h-8 w-8"
+                                                   >
+                                                      <Trash2 className="h-4 w-4" />
+                                                   </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                   <p>Delete hotkey set</p>
+                                                </TooltipContent>
+                                             </Tooltip>
+                                          </TooltipProvider>
                                        </div>
 
                                        <CardHeader>
