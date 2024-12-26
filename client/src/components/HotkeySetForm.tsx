@@ -7,6 +7,7 @@ import { cn } from '../lib/utils';
 import type { Hotkey } from '../types';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { KeyComboInput } from './ui/key-combo-input';
 import { Label } from './ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Textarea } from './ui/textarea';
@@ -21,13 +22,13 @@ const HotkeySetForm: React.FC<HotkeySetFormProps> = ({ onClose }) => {
    const { createHotkeySet, updateHotkeySet, getHotkeySet } = useHotkeys();
    const [isSubmitting, setIsSubmitting] = useState(false);
    const [isLoading, setIsLoading] = useState(!!id);
-
    const [formData, setFormData] = useState({
       name: '',
       application: '',
       description: '',
       hotkeys: [{ id: '1', key: '', description: '', action: '' }] as Hotkey[]
    });
+   const [lastDeletedHotkey, setLastDeletedHotkey] = useState<Hotkey | null>(null);
 
    const fetchHotkeySet = useCallback(async () => {
       if (!id) return;
@@ -59,6 +60,30 @@ const HotkeySetForm: React.FC<HotkeySetFormProps> = ({ onClose }) => {
       }
    }, [id, fetchHotkeySet]);
 
+   useEffect(() => {
+      const handleKeyDown = (event: KeyboardEvent) => {
+         if (event.altKey && event.key === 'a')
+         {
+            event.preventDefault();
+            addHotkeyRow();
+            toast.success('Added new hotkey row', {
+               description: 'Using Alt + A'
+            });
+         }
+
+         if (event.altKey && event.key === 'd' && formData.hotkeys.length > 1)
+         {
+            event.preventDefault();
+            const lastHotkeyId = formData.hotkeys[formData.hotkeys.length - 1].id;
+            removeHotkeyRow(lastHotkeyId);
+         }
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+
+      return () => window.removeEventListener('keydown', handleKeyDown);
+   }, [formData.hotkeys]);
+
    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const { name, value } = e.target;
       setFormData(prev => ({ ...prev, [name]: value }));
@@ -81,14 +106,36 @@ const HotkeySetForm: React.FC<HotkeySetFormProps> = ({ onClose }) => {
    };
 
    const removeHotkeyRow = (id: string) => {
-      setFormData(prev => ({
-         ...prev,
-         hotkeys: prev.hotkeys.filter(hotkey => hotkey.id !== id)
-      }));
+      const hotkeyToDelete = formData.hotkeys.find(hotkey => hotkey.id === id);
+
+      if (hotkeyToDelete)
+      {
+         setLastDeletedHotkey(hotkeyToDelete);
+
+         setFormData(prev => ({
+            ...prev,
+            hotkeys: prev.hotkeys.filter(hotkey => hotkey.id !== id)
+         }));
+
+         toast('Hotkey row removed', {
+            description: `Removed: ${hotkeyToDelete.key || 'Empty hotkey'}`,
+            action: {
+               label: 'Undo',
+               onClick: () => {
+                  setFormData(prev => ({
+                     ...prev,
+                     hotkeys: [...prev.hotkeys, hotkeyToDelete]
+                  }));
+                  setLastDeletedHotkey(null);
+               }
+            }
+         });
+      }
    };
 
    const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
+
       try
       {
          setIsSubmitting(true);
@@ -111,7 +158,6 @@ const HotkeySetForm: React.FC<HotkeySetFormProps> = ({ onClose }) => {
 
          if (id)
          {
-            // Update existing hotkey set
             const result = await updateHotkeySet(id, formData);
             if (result)
             {
@@ -120,7 +166,6 @@ const HotkeySetForm: React.FC<HotkeySetFormProps> = ({ onClose }) => {
             }
          } else
          {
-            // Create new hotkey set
             const result = await createHotkeySet(formData);
             if (result)
             {
@@ -157,7 +202,6 @@ const HotkeySetForm: React.FC<HotkeySetFormProps> = ({ onClose }) => {
    return (
       <div className="min-h-screen bg-background">
          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-            {/* Header */}
             <div className="py-8 border-b border-border">
                <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-4">
@@ -176,7 +220,6 @@ const HotkeySetForm: React.FC<HotkeySetFormProps> = ({ onClose }) => {
                </div>
             </div>
 
-            {/* Form */}
             <div className="py-8">
                <form onSubmit={handleSubmit} className="space-y-8">
                   <div className="grid gap-6">
@@ -228,7 +271,7 @@ const HotkeySetForm: React.FC<HotkeySetFormProps> = ({ onClose }) => {
                               className="h-8"
                            >
                               <PlusIcon className="h-4 w-4 mr-1" />
-                              Add Hotkey
+                              Add Hotkey (Alt + A)
                            </Button>
                         </div>
 
@@ -246,10 +289,9 @@ const HotkeySetForm: React.FC<HotkeySetFormProps> = ({ onClose }) => {
                                  {formData.hotkeys.map((hotkey, index) => (
                                     <TableRow key={hotkey.id}>
                                        <TableCell>
-                                          <Input
+                                          <KeyComboInput
                                              value={hotkey.key}
-                                             onChange={(e) => handleHotkeyChange(hotkey.id, 'key', e.target.value)}
-                                             placeholder="e.g., Ctrl + C"
+                                             onKeyComboChange={(value) => handleHotkeyChange(hotkey.id, 'key', value)}
                                              className="h-8"
                                           />
                                        </TableCell>
