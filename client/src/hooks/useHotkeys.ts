@@ -14,8 +14,8 @@ export const useHotkeys = () => {
       {
          setLoading(true);
          const response = await axios.get(`${API_URL}/hotkey-sets`);
-         console.log('Fetched hotkey sets:', response.data);
-         setHotkeySets(response.data);
+         const sortedSets = response.data.sort((a: HotkeySet, b: HotkeySet) => a.order - b.order);
+         setHotkeySets(sortedSets);
       } catch (err)
       {
          console.error('Error fetching hotkey sets:', err);
@@ -30,7 +30,6 @@ export const useHotkeys = () => {
       try
       {
          const response = await axios.get(`${API_URL}/hotkey-sets/${id}`);
-         console.log('Fetched single hotkey set:', response.data);
          return response.data;
       } catch (err)
       {
@@ -40,11 +39,14 @@ export const useHotkeys = () => {
       }
    }, []);
 
-   const createHotkeySet = async (hotkeySet: Omit<HotkeySet, '_id' | 'createdAt' | 'updatedAt'>) => {
+   const createHotkeySet = async (hotkeySet: Omit<HotkeySet, '_id' | 'createdAt' | 'updatedAt' | 'order'>) => {
       try
       {
          setLoading(true);
-         const response = await axios.post(`${API_URL}/hotkey-sets`, hotkeySet);
+         const maxOrder = hotkeySets.reduce((max, set) => Math.max(max, set.order), -1);
+         const newSet = { ...hotkeySet, order: maxOrder + 1 };
+
+         const response = await axios.post(`${API_URL}/hotkey-sets`, newSet);
          setHotkeySets(prev => [...prev, response.data]);
          return response.data;
       } catch (err)
@@ -70,6 +72,36 @@ export const useHotkeys = () => {
          console.error('Error updating hotkey set:', err);
          setError(err as Error);
          throw err;
+      } finally
+      {
+         setLoading(false);
+      }
+   };
+
+   const updateHotkeySetOrder = async (reorderedSets: { id: string; order: number }[]) => {
+      try
+      {
+         setLoading(true);
+         console.log('Sending reorder request:', { sets: reorderedSets });
+
+         const response = await axios.put(`${API_URL}/hotkey-sets/reorder`, {
+            sets: reorderedSets.map(set => ({
+               id: set.id,
+               order: Number(set.order) // Ensure order is a number
+            }))
+         });
+
+         // Update local state with the response data
+         const updatedSets = response.data;
+         setHotkeySets(updatedSets);
+         return updatedSets;
+      } catch (err)
+      {
+         console.error('Error updating hotkey set order:', err);
+         const error = err as Error;
+         const message = error.message || 'Failed to update order';
+         setError(error);
+         throw new Error(message);
       } finally
       {
          setLoading(false);
@@ -109,6 +141,7 @@ export const useHotkeys = () => {
       getHotkeySet,
       createHotkeySet,
       updateHotkeySet,
+      updateHotkeySetOrder,
       deleteHotkeySet,
       refreshHotkeySets: fetchHotkeySets
    };

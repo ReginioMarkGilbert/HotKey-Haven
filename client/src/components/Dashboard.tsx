@@ -1,11 +1,12 @@
 import { DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
-import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { SortableContext, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Eye, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useHotkeys } from '../hooks/useHotkeys';
+import type { HotkeySet } from '../types';
 import {
    AlertDialog,
    AlertDialogAction,
@@ -24,6 +25,11 @@ import {
    TooltipProvider,
    TooltipTrigger,
 } from "./ui/tooltip";
+
+interface DropResult {
+   active: { id: string };
+   over: { id: string } | null;
+}
 
 interface SortableHotkeySetCardProps {
    id: string;
@@ -94,18 +100,15 @@ const SortableHotkeySetCard = ({ id, children }: SortableHotkeySetCardProps) => 
 
 const Dashboard = () => {
    const navigate = useNavigate();
-   const { hotkeySets, loading, error, deleteHotkeySet } = useHotkeys();
+   const { hotkeySets, loading, error, deleteHotkeySet, updateHotkeySetOrder, refreshHotkeySets } = useHotkeys();
    const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
    const [isDeleting, setIsDeleting] = useState(false);
-   const [orderedSets, setOrderedSets] = useState<string[]>([]);
+   const [filteredHotkeySets, setFilteredHotkeySets] = useState<HotkeySet[]>([]);
 
-   // Initialize orderedSets when hotkeySets changes
+   // Initialize filtered sets
    useEffect(() => {
-      if (hotkeySets.length > 0)
-      {
-         setOrderedSets(hotkeySets.map(set => set._id));
-      }
+      setFilteredHotkeySets(hotkeySets);
    }, [hotkeySets]);
 
    const sensors = useSensors(
@@ -118,16 +121,44 @@ const Dashboard = () => {
       })
    );
 
-   const handleDragEnd = (event: DragEndEvent) => {
-      const { active, over } = event;
+   const handleDragEnd = async (event: DragEndEvent) => {
+      if (!event.over) return;
 
-      if (over && active.id !== over.id)
+      const oldIndex = filteredHotkeySets.findIndex(set => set._id === event.active.id);
+      const newIndex = filteredHotkeySets.findIndex(set => set._id === event.over!.id);
+
+      if (oldIndex === -1 || newIndex === -1)
       {
-         setOrderedSets((items) => {
-            const oldIndex = items.indexOf(active.id as string);
-            const newIndex = items.indexOf(over.id as string);
-            return arrayMove(items, oldIndex, newIndex);
-         });
+         console.error('Invalid indices:', { oldIndex, newIndex, event });
+         return;
+      }
+
+      const items = Array.from(filteredHotkeySets);
+      const [reorderedItem] = items.splice(oldIndex, 1);
+      items.splice(newIndex, 0, reorderedItem);
+
+      // Create the reorder request with correct types
+      const reorderRequest = items.map((item, index) => ({
+         id: item._id,
+         order: index
+      }));
+
+      console.log('Reordering sets:', reorderRequest);
+
+      // Update the UI immediately
+      setFilteredHotkeySets(items);
+
+      try
+      {
+         // Persist the new order
+         await updateHotkeySetOrder(reorderRequest);
+         toast.success('Order updated successfully');
+      } catch (error)
+      {
+         console.error('Failed to update order:', error);
+         toast.error('Failed to save the new order');
+         // Revert to the original order on error
+         await refreshHotkeySets();
       }
    };
 
@@ -142,8 +173,6 @@ const Dashboard = () => {
          {
             toast.success('Hotkey set deleted successfully');
             setIsDeleteDialogOpen(false);
-            // Remove the deleted set from orderedSets
-            setOrderedSets(prev => prev.filter(id => id !== selectedSetId));
          }
       } catch (error)
       {
@@ -177,10 +206,6 @@ const Dashboard = () => {
          </div>
       );
    }
-
-   const sortedHotkeySets = orderedSets
-      .map(id => hotkeySets.find(set => set._id === id))
-      .filter((set): set is NonNullable<typeof set> => set !== undefined);
 
    return (
       <>
@@ -228,9 +253,9 @@ const Dashboard = () => {
                         collisionDetection={closestCenter}
                         onDragEnd={handleDragEnd}
                      >
-                        <SortableContext items={orderedSets} strategy={rectSortingStrategy}>
+                        <SortableContext items={filteredHotkeySets.map(set => set._id)} strategy={rectSortingStrategy}>
                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                              {sortedHotkeySets.map((set) => (
+                              {filteredHotkeySets.map((set) => (
                                  <SortableHotkeySetCard key={set._id} id={set._id}>
                                     <Card className="group relative hover:shadow-lg transition-all duration-200 hover:border-primary/50 pl-12">
                                        {/* Hover Overlay */}

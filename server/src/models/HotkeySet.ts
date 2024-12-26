@@ -1,14 +1,23 @@
-import { Schema, model } from 'mongoose';
+import mongoose from 'mongoose';
 
-// Schemaless model with minimal validation
-const HotkeySetSchema = new Schema({
-   // We'll only enforce that the document has a name and application
-   name: { type: String, required: true },
-   application: { type: String, required: true }
-}, {
-   timestamps: true,
-   versionKey: false,
-   strict: false // This makes the schema flexible/schemaless
+const hotkeySchema = new mongoose.Schema({
+   id: { type: String, required: true },
+   key: { type: String, required: true },
+   description: { type: String, required: true },
+   action: { type: String }
 });
 
-export const HotkeySet = model('HotkeySet', HotkeySetSchema);
+const hotkeySetSchema = new mongoose.Schema({
+   name: { type: String, required: true },
+   application: { type: String, required: true },
+   description: { type: String },
+   hotkeys: [hotkeySchema],
+   order: { type: Number, default: 0 },
+}, {
+   timestamps: true
+});
+
+// Add index for order field
+hotkeySetSchema.index({ order: 1 });
+
+export const HotkeySet = mongoose.model('HotkeySet', hotkeySetSchema);

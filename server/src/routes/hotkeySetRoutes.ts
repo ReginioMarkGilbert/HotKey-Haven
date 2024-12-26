@@ -1,29 +1,32 @@
-import { Router } from 'express';
+import express from 'express';
 import {
    createHotkeySet,
    deleteHotkeySet,
-   getAllHotkeySets,
-   getHotkeySetById,
-   updateHotkeySet
+   getHotkeySet,
+   getHotkeySets,
+   updateHotkeySet,
+   updateHotkeySetOrder
 } from '../controllers/hotkeySetController';
 import { validateHotkeySet } from '../middleware/validateHotkeySet';
-import { validateId } from '../middleware/validateId';
 
-const router = Router();
+const router = express.Router();
 
-// GET all hotkey sets
-router.get('/', getAllHotkeySets);
+// Get all hotkey sets
+router.get('/', getHotkeySets);
 
-// GET single hotkey set by ID
-router.get('/:id', validateId, getHotkeySetById);
-
-// POST create new hotkey set
+// Create a new hotkey set
 router.post('/', validateHotkeySet, createHotkeySet);
 
-// PUT update hotkey set
-router.put('/:id', validateId, validateHotkeySet, updateHotkeySet);
+// Reorder hotkey sets - must be before /:id routes
+router.put('/reorder', updateHotkeySetOrder);
 
-// DELETE hotkey set
-router.delete('/:id', validateId, deleteHotkeySet);
+// Get a single hotkey set
+router.get('/:id', getHotkeySet);
+
+// Update a hotkey set
+router.put('/:id', validateHotkeySet, updateHotkeySet);
+
+// Delete a hotkey set
+router.delete('/:id', deleteHotkeySet);
 
 export default router;
