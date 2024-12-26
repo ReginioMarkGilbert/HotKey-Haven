@@ -22,6 +22,12 @@ export const useKeyDetection = (): KeyDetectionHook => {
 
    // Convert key event to readable format
    const formatKeyCombo = useCallback((event: KeyboardEvent): string => {
+      // Handle Escape key specially
+      if (event.key === 'Escape')
+      {
+         return '';
+      }
+
       // Get pressed modifier keys
       const modifiers = [];
       if (event.ctrlKey) modifiers.push('Ctrl');
@@ -61,10 +67,7 @@ export const useKeyDetection = (): KeyDetectionHook => {
       event.preventDefault();
 
       const keyCombo = formatKeyCombo(event);
-      if (keyCombo)
-      {
-         setDetectedKeys(keyCombo);
-      }
+      setDetectedKeys(keyCombo); // Will clear if Escape was pressed
    }, [isListening, formatKeyCombo]);
 
    // Start listening for key combinations
